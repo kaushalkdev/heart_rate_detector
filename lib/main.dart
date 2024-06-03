@@ -1,4 +1,6 @@
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   runApp(const MyApp());
@@ -55,17 +57,19 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+  PermissionStatus? _status;
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+  Future<PermissionStatus> _requestCameraPermission() async {
+    return await Permission.camera.request();
+  }
+
+  @override
+  void initState() {
+    _requestCameraPermission().then((status) {
+      _status = status;
+      setState(() {});
     });
+    super.initState();
   }
 
   @override
@@ -106,22 +110,119 @@ class _MyHomePageState extends State<MyHomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             const Text(
-              'You have pushed the button this many times:',
+              'Start heart rate capturing',
             ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
+            if (_status == PermissionStatus.permanentlyDenied)
+              const Text(
+                  'Permission permanently denied, please enable it in settings'),
+            if (_status == PermissionStatus.denied)
+              ElevatedButton(
+                onPressed: () async {
+                  _status = await _requestCameraPermission();
+                  setState(() {});
+                },
+                child: const Text('Request Camera permission'),
+              ),
           ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
+        onPressed: !(_status == PermissionStatus.granted)
+            ? null
+            : () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const DetectionScreen(),
+                    ));
+              },
         tooltip: 'Increment',
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.camera),
       ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }
 
+class DetectionScreen extends StatefulWidget {
+  const DetectionScreen({super.key});
 
+  @override
+  State<DetectionScreen> createState() => _DetectionScreenState();
+}
+
+class _DetectionScreenState extends State<DetectionScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Center(child: CameraWidget()),
+        ],
+      ),
+    );
+  }
+}
+
+class CameraWidget extends StatefulWidget {
+  const CameraWidget({super.key});
+
+  @override
+  State<CameraWidget> createState() => _CameraWidgetState();
+}
+
+class _CameraWidgetState extends State<CameraWidget> {
+  CameraPreview? _cameraPreview;
+  CameraFactory cameraFactory = CameraFactory.i;
+
+  @override
+  void initState() {
+    cameraFactory.createCamera().then((cameraPreview) {
+      _cameraPreview = cameraPreview;
+      setState(() {});
+    });
+
+    super.initState();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return (_cameraPreview == null)
+        ? const SizedBox(height: 100, width: 100, child: Placeholder())
+        : SizedBox(
+            height: 100,
+            width: 100,
+            child: _cameraPreview,
+          );
+  }
+
+  @override
+  void dispose() {
+    cameraFactory.disposeCamera();
+    super.dispose();
+  }
+}
+
+class CameraFactory {
+  CameraFactory._();
+  static final i = CameraFactory._();
+
+  CameraController? _controller;
+
+  Future<CameraPreview> createCamera() async {
+    var cameraDescription = await availableCameras();
+
+    if (cameraDescription.isEmpty) {
+      throw Exception('No cameras found');
+    }
+
+    _controller =
+        CameraController(cameraDescription.first, ResolutionPreset.high);
+
+    return CameraPreview(_controller!);
+  }
+
+  void disposeCamera() {
+    _controller?.dispose();
+  }
+}
