@@ -1,12 +1,9 @@
 import 'dart:developer';
-import 'dart:isolate';
-import 'package:image/image.dart' as img;
+
 import 'package:camera/camera.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
-import 'package:torch_light/torch_light.dart';
+import 'package:image/image.dart' as img;
 
 class HeartRateDetector extends StatefulWidget {
   const HeartRateDetector({super.key});
@@ -87,9 +84,8 @@ class _CameraWidgetState extends State<CameraWidget> {
 
                 byteSteam.value = (await image?.readAsBytes())!;
                 // log(byteSteam.value.toString());
-                log(byteSteam.value[0].toString() +
-                    " " +
-                    byteSteam.value[1].toString());
+                log(
+                    '${byteSteam.value[0]} ${byteSteam.value[1]}');
               },
               child: Text("Take Image")),
           ValueListenableBuilder(
@@ -105,7 +101,7 @@ class _CameraWidgetState extends State<CameraWidget> {
           ValueListenableBuilder(
             valueListenable: heartRate,
             builder: (context, value, child) {
-              return Text('plane | ${value}');
+              return Text('plane | $value');
             },
           )
         ],
@@ -115,7 +111,14 @@ class _CameraWidgetState extends State<CameraWidget> {
 
   // Convert RGB to JPEG
   Uint8List rgbToJpeg(Uint8List rgbBytes, int width, int height) {
-    img.Image image = img.Image.fromBytes(width, height, rgbBytes);
+    final image = img.Image.fromBytes(
+      width: width,
+      height: height,
+      bytes: rgbBytes.buffer,
+      bytesOffset: rgbBytes.offsetInBytes,
+      numChannels: 3,
+      order: img.ChannelOrder.rgb,
+    );
     return Uint8List.fromList(img.encodeJpg(image));
   }
 

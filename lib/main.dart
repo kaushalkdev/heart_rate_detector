@@ -1,4 +1,3 @@
-import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:hear_rate_detector/heart_rate_detector/ui/screen/heart_rate_detector.dart';
 import 'package:permission_handler/permission_handler.dart';
