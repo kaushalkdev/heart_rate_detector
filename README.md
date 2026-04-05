@@ -115,13 +115,24 @@ See [Processing README](lib/features/heart_rate/processing/README.md) for detail
 
 ## 🧪 Testing
 
+Comprehensive test suite with **70 tests** covering:
+- ✅ Domain models (22 tests)
+- ✅ Processing algorithms (26 tests)
+- ✅ UI widgets (19 tests)
+- ✅ Integration flows (3 tests)
+
 ```bash
 # Run all tests
 flutter test
 
 # Run with coverage
 flutter test --coverage
+
+# Run specific test file
+flutter test test/core/rgb_values_test.dart
 ```
+
+See [Test Documentation](test/README.md) for detailed testing guide.
 
 ## 🤝 Contributing
 
