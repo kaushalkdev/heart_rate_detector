@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hear_rate_detector/app/app.dart';
+import 'package:hear_rate_detector/app.dart';
 import 'package:hear_rate_detector/features/heart_rate/core/rgb_values.dart';
 import 'package:hear_rate_detector/features/heart_rate/ui/widgets/rgb_values_panel.dart';
 import 'package:hear_rate_detector/features/heart_rate/ui/widgets/color_filtered_frames_panel.dart';
