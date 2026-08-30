@@ -53,14 +53,14 @@ app.*.map.json
 /android/app/release
 /android/build/
 /android/app/build/
+/android/app/.cxx/
 /android/data.b64
 /android/dataFinal.b64
 /android/dataFinal2.b64
 /android/dataKey.b64
 
-
-
 windows/flutter/generated_plugins.cmake
 .vscode/settings.json
 ios/Podfile.lock
 .fvm/
+pubspec.lock
