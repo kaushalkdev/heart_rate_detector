@@ -37,6 +37,15 @@ class _HeartRateHomePageState extends State<HeartRateHomePage> {
     );
   }
 
+  void _openFrameTiming() {
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (context) => createDefaultFrameTimingPage(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -49,6 +58,14 @@ class _HeartRateHomePageState extends State<HeartRateHomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             const Text('Start heart rate capturing'),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _status == PermissionStatus.granted
+                  ? _openFrameTiming
+                  : null,
+              icon: const Icon(Icons.speed),
+              label: const Text('Test Camera Frame Timing'),
+            ),
             if (_status == PermissionStatus.permanentlyDenied)
               const Text(
                 'Permission permanently denied, please enable it in settings',

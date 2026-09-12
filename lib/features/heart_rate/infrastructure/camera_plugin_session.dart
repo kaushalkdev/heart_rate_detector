@@ -10,14 +10,13 @@ import 'package:hear_rate_detector/features/heart_rate/infrastructure/camera_fra
 
 /// [CameraSession] backed by `package:camera` (only file here that imports the plugin).
 class CameraPluginSession implements CameraSession {
-  CameraPluginSession({
-    this.resolutionPreset = ResolutionPreset.low,
-  });
+  CameraPluginSession({this.resolutionPreset = ResolutionPreset.low});
 
   final ResolutionPreset resolutionPreset;
 
   CameraController? _controller;
   StreamController<CameraFrame>? _frameController;
+  Stopwatch? _frameClock;
   bool _torchEnabled = false;
 
   @override
@@ -26,19 +25,29 @@ class CameraPluginSession implements CameraSession {
     if (cameras.isEmpty) {
       throw Exception('No cameras found');
     }
-    _controller = CameraController(cameras.first, resolutionPreset);
+    final camera = cameras.firstWhere(
+      (camera) => camera.lensDirection == CameraLensDirection.back,
+      orElse: () => cameras.first,
+    );
+    _controller = CameraController(
+      camera,
+      resolutionPreset,
+      enableAudio: false,
+    );
     await _controller!.initialize();
 
     // Enable torch/flashlight BEFORE starting image stream
     await _enableTorch();
 
     _frameController = StreamController<CameraFrame>.broadcast();
+    _frameClock = Stopwatch()..start();
     await _controller!.startImageStream((image) {
       final sink = _frameController;
       if (sink == null || sink.isClosed) {
         return;
       }
-      sink.add(CameraFrameMapper.fromCameraImage(image));
+      final arrivedAt = _frameClock?.elapsed ?? Duration.zero;
+      sink.add(CameraFrameMapper.fromCameraImage(image, arrivedAt: arrivedAt));
     });
   }
 
@@ -107,6 +116,8 @@ class CameraPluginSession implements CameraSession {
     await _controller?.stopImageStream();
     await _frameController?.close();
     _frameController = null;
+    _frameClock?.stop();
+    _frameClock = null;
     await _controller?.dispose();
     _controller = null;
   }

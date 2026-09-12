@@ -12,10 +12,19 @@ class FrameProcessingPipeline {
     required RgbAnalyzer analyzer,
     required RgbChannelFilter filter,
     required FrameEncoder encoder,
-  })  : _converter = converter,
-        _analyzer = analyzer,
-        _filter = filter,
-        _encoder = encoder;
+  }) : this._(
+          converter,
+          analyzer,
+          filter,
+          encoder,
+        );
+
+  FrameProcessingPipeline._(
+    this._converter,
+    this._analyzer,
+    this._filter,
+    this._encoder,
+  );
 
   final FrameConverter _converter;
   final RgbAnalyzer _analyzer;
