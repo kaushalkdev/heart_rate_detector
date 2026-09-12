@@ -6,6 +6,7 @@ import 'package:hear_rate_detector/features/heart_rate/core/frame_timing_stats.d
 import 'package:hear_rate_detector/features/heart_rate/core/red_signal.dart';
 import 'package:hear_rate_detector/features/heart_rate/ports/camera_frame.dart';
 import 'package:hear_rate_detector/features/heart_rate/ports/camera_session.dart';
+import 'package:hear_rate_detector/features/heart_rate/processing/signal_filter.dart';
 import 'package:hear_rate_detector/features/heart_rate/ui/widgets/live_preview_panel.dart';
 import 'package:hear_rate_detector/features/heart_rate/ui/widgets/red_signal_chart.dart';
 
@@ -21,8 +22,13 @@ class FrameTimingPage extends StatefulWidget {
 
 class _FrameTimingPageState extends State<FrameTimingPage>
     with WidgetsBindingObserver {
+  static const _signalSampleRateHz = 30.0;
+
   final FrameTimingTracker _tracker = FrameTimingTracker();
   final RedChannelAnalyzer _redAnalyzer = const RedChannelAnalyzer();
+  final SignalFilter _signalFilter = BandPassSignalFilter(
+    sampleRateHz: _signalSampleRateHz,
+  );
   final RedSignalTracker _redSignalTracker = RedSignalTracker();
   FrameTimingStats _stats = const FrameTimingStats.empty();
   FrameTimingStats _latestStats = const FrameTimingStats.empty();
@@ -78,9 +84,12 @@ class _FrameTimingPageState extends State<FrameTimingPage>
 
   void _onFrame(CameraFrame frame) {
     _latestStats = _tracker.add(frame.arrivedAt);
+    final rawRedIntensity = _redAnalyzer.averageRed(frame);
+    final filteredRedIntensity = _signalFilter.process(rawRedIntensity);
+
     _redSignalTracker.add(
       timestamp: frame.arrivedAt,
-      redIntensity: _redAnalyzer.averageRed(frame),
+      redIntensity: filteredRedIntensity,
     );
   }
 
@@ -89,6 +98,7 @@ class _FrameTimingPageState extends State<FrameTimingPage>
     _displayTimer = null;
     await _subscription?.cancel();
     _subscription = null;
+    _signalFilter.reset();
     await widget.cameraSession.dispose();
     if (mounted) setState(() => _sessionReady = false);
   }
