@@ -23,15 +23,26 @@ class FrameTimingPage extends StatefulWidget {
 class _FrameTimingPageState extends State<FrameTimingPage>
     with WidgetsBindingObserver {
   static const _signalSampleRateHz = 30.0;
+  static const _signalMinValue = -20.0;
+  static const _signalMaxValue = 20.0;
+  static const _signalDifferenceMaxMagnitude = 5.0;
 
   final FrameTimingTracker _tracker = FrameTimingTracker();
   final RedChannelAnalyzer _redAnalyzer = const RedChannelAnalyzer();
   final SignalFilter _signalFilter = BandPassSignalFilter(
     sampleRateHz: _signalSampleRateHz,
   );
-  final RedSignalTracker _redSignalTracker = RedSignalTracker();
+  final RedSignalTracker _redSignalTracker = RedSignalTracker(
+    differenceLimit: _signalDifferenceMaxMagnitude,
+  );
+  final SignalAmplitudeRangeTracker _rangeTracker =
+      SignalAmplitudeRangeTracker();
   FrameTimingStats _stats = const FrameTimingStats.empty();
   FrameTimingStats _latestStats = const FrameTimingStats.empty();
+  SignalLogMetrics? _latestSignalMetrics;
+  SignalLogMetrics? _visibleSignalMetrics;
+  SignalAmplitudeRange? _suggestedRange;
+  SignalAmplitudeRange? _lockedRange;
   List<RedSignalSample> _signalSamples = const [];
   StreamSubscription<CameraFrame>? _subscription;
   Timer? _displayTimer;
@@ -57,6 +68,8 @@ class _FrameTimingPageState extends State<FrameTimingPage>
         if (mounted) {
           setState(() {
             _stats = _latestStats;
+            _visibleSignalMetrics = _latestSignalMetrics;
+            _suggestedRange = _rangeTracker.suggestedRange;
             _signalSamples = _redSignalTracker.samples;
           });
         }
@@ -85,12 +98,28 @@ class _FrameTimingPageState extends State<FrameTimingPage>
   void _onFrame(CameraFrame frame) {
     _latestStats = _tracker.add(frame.arrivedAt);
     final rawRedIntensity = _redAnalyzer.averageRed(frame);
-    final filteredRedIntensity = _signalFilter.process(rawRedIntensity);
+    final bandPassedRedIntensity = _signalFilter.process(rawRedIntensity);
+    final cappedRedIntensity = _capSignalValue(bandPassedRedIntensity);
 
-    _redSignalTracker.add(
+    final sample = _redSignalTracker.add(
       timestamp: frame.arrivedAt,
-      redIntensity: filteredRedIntensity,
+      redIntensity: cappedRedIntensity,
     );
+    final plottedDifference = sample?.difference;
+    if (plottedDifference != null) {
+      _rangeTracker.add(
+        timestamp: frame.arrivedAt,
+        value: plottedDifference,
+      );
+    }
+    _latestSignalMetrics = SignalLogMetrics(
+      timestamp: frame.arrivedAt,
+      rawRedIntensity: rawRedIntensity,
+      bandPassedRedIntensity: bandPassedRedIntensity,
+      cappedRedIntensity: cappedRedIntensity,
+      plottedDifference: plottedDifference,
+    );
+    _logSignalMetrics(_latestSignalMetrics!);
   }
 
   Future<void> _stopSession() async {
@@ -99,6 +128,9 @@ class _FrameTimingPageState extends State<FrameTimingPage>
     await _subscription?.cancel();
     _subscription = null;
     _signalFilter.reset();
+    _rangeTracker.reset();
+    _suggestedRange = null;
+    _lockedRange = null;
     await widget.cameraSession.dispose();
     if (mounted) setState(() => _sessionReady = false);
   }
@@ -124,6 +156,41 @@ class _FrameTimingPageState extends State<FrameTimingPage>
   }
 
   double _milliseconds(Duration duration) => duration.inMicroseconds / 1000;
+
+  double _capSignalValue(double value) {
+    return value.clamp(_signalMinValue, _signalMaxValue).toDouble();
+  }
+
+  void _logSignalMetrics(SignalLogMetrics metrics) {
+    log(
+      'red_signal_metrics '
+      'timestamp=${metrics.formattedTimestamp} '
+      'raw=${metrics.rawRedIntensity.toStringAsFixed(4)} '
+      'band_passed=${metrics.bandPassedRedIntensity.toStringAsFixed(4)} '
+      'capped=${metrics.cappedRedIntensity.toStringAsFixed(4)} '
+      'difference=${metrics.formattedDifference} '
+      'suggested_range=${_rangeTracker.suggestedRange?.label ?? 'warming_up'} '
+      'locked_range=${_lockedRange?.label ?? 'none'}',
+      name: 'heart_rate.signal',
+    );
+  }
+
+  SignalAmplitudeRange? get _activeRange => _lockedRange ?? _suggestedRange;
+
+  void _lockSuggestedRange() {
+    final suggestedRange = _suggestedRange;
+    if (suggestedRange == null) return;
+
+    setState(() {
+      _lockedRange = suggestedRange;
+    });
+  }
+
+  void _resetLockedRange() {
+    setState(() {
+      _lockedRange = null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -174,6 +241,25 @@ class _FrameTimingPageState extends State<FrameTimingPage>
                 const SizedBox(height: 16),
                 Card(
                   child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SignalMetricsPanel(metrics: _visibleSignalMetrics),
+                        const SizedBox(height: 12),
+                        _SignalRangeControls(
+                          suggestedRange: _suggestedRange,
+                          lockedRange: _lockedRange,
+                          onLock: _lockSuggestedRange,
+                          onReset: _resetLockedRange,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -186,13 +272,130 @@ class _FrameTimingPageState extends State<FrameTimingPage>
                           ),
                         ),
                         const SizedBox(height: 8),
-                        RedSignalChart(samples: _signalSamples),
+                        RedSignalChart(
+                          samples: _signalSamples,
+                          amplitudeRange: _activeRange,
+                        ),
                       ],
                     ),
                   ),
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _SignalRangeControls extends StatelessWidget {
+  const _SignalRangeControls({
+    required this.suggestedRange,
+    required this.lockedRange,
+    required this.onLock,
+    required this.onReset,
+  });
+
+  final SignalAmplitudeRange? suggestedRange;
+  final SignalAmplitudeRange? lockedRange;
+  final VoidCallback onLock;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    final lockedRange = this.lockedRange;
+    final suggestedRange = this.suggestedRange;
+    final hasSuggestion = suggestedRange != null;
+    final label = lockedRange == null
+        ? 'Lock range: ${suggestedRange?.label ?? '--'}'
+        : 'Range locked: ${lockedRange.label}';
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        FilledButton.icon(
+          onPressed: hasSuggestion ? onLock : null,
+          icon: Icon(lockedRange == null ? Icons.lock_open : Icons.lock),
+          label: Text(label),
+        ),
+        OutlinedButton.icon(
+          onPressed: lockedRange == null ? null : onReset,
+          icon: const Icon(Icons.restart_alt),
+          label: const Text('Reset'),
+        ),
+      ],
+    );
+  }
+}
+
+class SignalLogMetrics {
+  const SignalLogMetrics({
+    required this.timestamp,
+    required this.rawRedIntensity,
+    required this.bandPassedRedIntensity,
+    required this.cappedRedIntensity,
+    required this.plottedDifference,
+  });
+
+  final Duration timestamp;
+  final double rawRedIntensity;
+  final double bandPassedRedIntensity;
+  final double cappedRedIntensity;
+  final double? plottedDifference;
+
+  String get formattedTimestamp {
+    final totalMilliseconds = timestamp.inMilliseconds;
+    final minutes = totalMilliseconds ~/ Duration.millisecondsPerMinute;
+    final seconds =
+        (totalMilliseconds % Duration.millisecondsPerMinute) ~/
+        Duration.millisecondsPerSecond;
+    final milliseconds = totalMilliseconds % Duration.millisecondsPerSecond;
+
+    return '${minutes.toString().padLeft(2, '0')}:'
+        '${seconds.toString().padLeft(2, '0')}.'
+        '${milliseconds.toString().padLeft(3, '0')}';
+  }
+
+  String get formattedDifference {
+    final difference = plottedDifference;
+    return difference == null ? 'warming_up' : difference.toStringAsFixed(4);
+  }
+}
+
+class _SignalMetricsPanel extends StatelessWidget {
+  const _SignalMetricsPanel({required this.metrics});
+
+  final SignalLogMetrics? metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    final metrics = this.metrics;
+
+    if (metrics == null) {
+      return const Text('Signal timestamp: waiting for signal');
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Signal timestamp: ${metrics.formattedTimestamp}'),
+        Text('Raw red: ${metrics.rawRedIntensity.toStringAsFixed(2)}'),
+        Text(
+          'Band-pass output: '
+          '${metrics.bandPassedRedIntensity.toStringAsFixed(2)}',
+        ),
+        Text('Capped output: ${metrics.cappedRedIntensity.toStringAsFixed(2)}'),
+        Text('Plotted delta: ${metrics.formattedDifference}'),
+        Text(
+          'Output cap: ${_FrameTimingPageState._signalMinValue.toStringAsFixed(2)} '
+          'to ${_FrameTimingPageState._signalMaxValue.toStringAsFixed(2)}',
+        ),
+        Text(
+          'Delta cap: '
+          '-${_FrameTimingPageState._signalDifferenceMaxMagnitude.toStringAsFixed(2)} '
+          'to ${_FrameTimingPageState._signalDifferenceMaxMagnitude.toStringAsFixed(2)}',
+        ),
+      ],
     );
   }
 }

@@ -88,11 +88,11 @@ class FirstOrderHighPassFilter implements SignalFilter {
 /// Simple real-time band-pass filter for optical heart-rate signals.
 ///
 /// The default pass band keeps typical pulse frequencies:
-/// 0.7 Hz to 4.0 Hz, roughly 42 BPM to 240 BPM.
+/// 0.5 Hz to 4.0 Hz, roughly 30 BPM to 240 BPM.
 class BandPassSignalFilter implements SignalFilter {
   BandPassSignalFilter({
     required double sampleRateHz,
-    double lowCutoffHz = 0.7,
+    double lowCutoffHz = 0.5,
     double highCutoffHz = 4.0,
   })  : assert(lowCutoffHz > 0),
         assert(highCutoffHz > lowCutoffHz),
@@ -117,5 +117,31 @@ class BandPassSignalFilter implements SignalFilter {
   void reset() {
     _highPass.reset();
     _lowPass.reset();
+  }
+}
+
+/// Caps a wrapped filter's output to a stable range for plotting/tuning.
+class BoundedSignalFilter implements SignalFilter {
+  BoundedSignalFilter({
+    required SignalFilter filter,
+    required double minValue,
+    required double maxValue,
+  })  : assert(maxValue > minValue),
+        _filter = filter,
+        _minValue = minValue,
+        _maxValue = maxValue;
+
+  final SignalFilter _filter;
+  final double _minValue;
+  final double _maxValue;
+
+  @override
+  double process(double sample) {
+    return _filter.process(sample).clamp(_minValue, _maxValue).toDouble();
+  }
+
+  @override
+  void reset() {
+    _filter.reset();
   }
 }

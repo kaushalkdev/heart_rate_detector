@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:math' as math;
 
 import 'package:hear_rate_detector/features/heart_rate/ports/camera_frame.dart';
 
@@ -46,30 +47,114 @@ class RedChannelAnalyzer {
 
 /// Builds a timestamped rolling series of consecutive red-frame differences.
 class RedSignalTracker {
-  RedSignalTracker({this.window = const Duration(seconds: 15)});
+  RedSignalTracker({
+    this.window = const Duration(seconds: 15),
+    this.differenceLimit,
+  }) : assert(differenceLimit == null || differenceLimit > 0);
 
   final Duration window;
+  final double? differenceLimit;
   final ListQueue<RedSignalSample> _samples = ListQueue<RedSignalSample>();
   double? _previousRed;
 
   List<RedSignalSample> get samples => List.unmodifiable(_samples);
 
-  void add({required Duration timestamp, required double redIntensity}) {
+  RedSignalSample? add({
+    required Duration timestamp,
+    required double redIntensity,
+  }) {
     final previous = _previousRed;
     _previousRed = redIntensity;
-    if (previous == null) return;
+    if (previous == null) return null;
 
-    _samples.addLast(
-      RedSignalSample(
-        timestamp: timestamp,
-        redIntensity: redIntensity,
-        difference: redIntensity - previous,
-      ),
+    final rawDifference = redIntensity - previous;
+    final limit = differenceLimit;
+    final difference = limit == null
+        ? rawDifference
+        : rawDifference.clamp(-limit, limit).toDouble();
+
+    final sample = RedSignalSample(
+      timestamp: timestamp,
+      redIntensity: redIntensity,
+      difference: difference,
     );
+    _samples.addLast(sample);
 
     final cutoff = timestamp - window;
     while (_samples.isNotEmpty && _samples.first.timestamp < cutoff) {
       _samples.removeFirst();
     }
+
+    return sample;
+  }
+}
+
+class SignalAmplitudeRange {
+  const SignalAmplitudeRange({required this.maxMagnitude})
+      : assert(maxMagnitude > 0);
+
+  final double maxMagnitude;
+
+  double get min => -maxMagnitude;
+
+  double get max => maxMagnitude;
+
+  String get label => '+/-${maxMagnitude.toStringAsFixed(2)}';
+}
+
+class _AmplitudeSample {
+  const _AmplitudeSample({required this.timestamp, required this.value});
+
+  final Duration timestamp;
+  final double value;
+}
+
+/// Observes recent filtered values and suggests a stable chart amplitude range.
+class SignalAmplitudeRangeTracker {
+  SignalAmplitudeRangeTracker({
+    this.window = const Duration(seconds: 5),
+    this.percentile = 0.95,
+    this.paddingFactor = 1.15,
+    this.minimumMagnitude = 0.5,
+  })  : assert(percentile > 0 && percentile <= 1),
+        assert(paddingFactor >= 1),
+        assert(minimumMagnitude > 0);
+
+  final Duration window;
+  final double percentile;
+  final double paddingFactor;
+  final double minimumMagnitude;
+  final ListQueue<_AmplitudeSample> _samples = ListQueue<_AmplitudeSample>();
+
+  SignalAmplitudeRange? get suggestedRange {
+    if (_samples.isEmpty) return null;
+
+    final magnitudes = _samples
+        .map((sample) => sample.value.abs())
+        .where((value) => value.isFinite)
+        .toList()
+      ..sort();
+    if (magnitudes.isEmpty) return null;
+
+    final index = ((magnitudes.length - 1) * percentile).round();
+    final magnitude = math.max(
+      minimumMagnitude,
+      magnitudes[index] * paddingFactor,
+    );
+
+    return SignalAmplitudeRange(maxMagnitude: magnitude);
+  }
+
+  void add({required Duration timestamp, required double value}) {
+    _samples.addLast(_AmplitudeSample(timestamp: timestamp, value: value));
+
+    final cutoff = timestamp - window;
+    while (_samples.isNotEmpty && _samples.first.timestamp < cutoff) {
+      _samples.removeFirst();
+    }
+  }
+
+  void reset() {
+    _samples.clear();
   }
 }
