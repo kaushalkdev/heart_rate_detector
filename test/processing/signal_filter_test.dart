@@ -104,6 +104,20 @@ void main() {
       expect(filter.process(100), 0);
     });
   });
+
+  group('BoundedSignalFilter', () {
+    test('caps wrapped filter output to configured range', () {
+      final filter = BoundedSignalFilter(
+        filter: _IdentitySignalFilter(),
+        minValue: -2,
+        maxValue: 2,
+      );
+
+      expect(filter.process(-5), -2);
+      expect(filter.process(1.5), 1.5);
+      expect(filter.process(5), 2);
+    });
+  });
 }
 
 double _peakFilteredMagnitude(
@@ -124,4 +138,12 @@ double _peakFilteredMagnitude(
   }
 
   return peak;
+}
+
+class _IdentitySignalFilter implements SignalFilter {
+  @override
+  double process(double sample) => sample;
+
+  @override
+  void reset() {}
 }

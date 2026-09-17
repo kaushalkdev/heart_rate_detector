@@ -28,11 +28,63 @@ void main() {
   test('tracks signed differences and removes samples outside the window', () {
     final tracker = RedSignalTracker(window: const Duration(seconds: 2));
 
-    tracker.add(timestamp: Duration.zero, redIntensity: 100);
-    tracker.add(timestamp: const Duration(seconds: 1), redIntensity: 103);
+    final first = tracker.add(timestamp: Duration.zero, redIntensity: 100);
+    final second = tracker.add(
+      timestamp: const Duration(seconds: 1),
+      redIntensity: 103,
+    );
     tracker.add(timestamp: const Duration(seconds: 2), redIntensity: 101);
     tracker.add(timestamp: const Duration(seconds: 4), redIntensity: 106);
 
+    expect(first, isNull);
+    expect(second?.difference, 3);
     expect(tracker.samples.map((sample) => sample.difference), [-2, 5]);
+  });
+
+  test('caps tracked differences when a limit is configured', () {
+    final tracker = RedSignalTracker(differenceLimit: 2);
+
+    tracker.add(timestamp: Duration.zero, redIntensity: 100);
+    final positive = tracker.add(
+      timestamp: const Duration(seconds: 1),
+      redIntensity: 110,
+    );
+    final negative = tracker.add(
+      timestamp: const Duration(seconds: 2),
+      redIntensity: 90,
+    );
+
+    expect(positive?.difference, 2);
+    expect(negative?.difference, -2);
+  });
+
+  test('suggests symmetric amplitude range from recent signal values', () {
+    final tracker = SignalAmplitudeRangeTracker(
+      percentile: 1,
+      paddingFactor: 1,
+      minimumMagnitude: 0.5,
+    );
+
+    tracker.add(timestamp: Duration.zero, value: -2);
+    tracker.add(timestamp: const Duration(seconds: 1), value: 4);
+
+    final range = tracker.suggestedRange;
+
+    expect(range?.min, -4);
+    expect(range?.max, 4);
+    expect(range?.label, '+/-4.00');
+  });
+
+  test('removes amplitude samples outside the tracking window', () {
+    final tracker = SignalAmplitudeRangeTracker(
+      window: const Duration(seconds: 2),
+      percentile: 1,
+      paddingFactor: 1,
+    );
+
+    tracker.add(timestamp: Duration.zero, value: 10);
+    tracker.add(timestamp: const Duration(seconds: 3), value: 2);
+
+    expect(tracker.suggestedRange?.maxMagnitude, 2);
   });
 }
