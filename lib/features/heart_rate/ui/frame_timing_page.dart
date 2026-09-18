@@ -155,8 +155,6 @@ class _FrameTimingPageState extends State<FrameTimingPage>
     super.dispose();
   }
 
-  double _milliseconds(Duration duration) => duration.inMicroseconds / 1000;
-
   double _capSignalValue(double value) {
     return value.clamp(_signalMinValue, _signalMaxValue).toDouble();
   }
@@ -195,67 +193,25 @@ class _FrameTimingPageState extends State<FrameTimingPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Camera Frame Timing')),
+      appBar: AppBar(title: const Text('Heart Rate Signal')),
       body: _error != null
           ? Center(child: Text('Camera failed to start: $_error'))
           : !_sessionReady
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(16),
               children: [
-                const Text(
-                  'Natural camera stream with rear camera and torch enabled. No FPS is requested.',
-                  textAlign: TextAlign.center,
+                _CaptureOverview(
+                  preview: widget.cameraSession.buildPreview(),
+                  frameStats: _stats,
+                  signalMetrics: _visibleSignalMetrics,
                 ),
                 const SizedBox(height: 16),
-                Center(
-                  child: LivePreviewPanel(
-                    preview: widget.cameraSession.buildPreview(),
-                    size: 280,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Measured FPS: ${_stats.averageFps.toStringAsFixed(2)}',
-                        ),
-                        Text('Frames observed: ${_stats.framesObserved}'),
-                        Text(
-                          'Latest interval: ${_milliseconds(_stats.latestInterval).toStringAsFixed(2)} ms',
-                        ),
-                        Text(
-                          'Minimum interval: ${_milliseconds(_stats.minimumInterval).toStringAsFixed(2)} ms',
-                        ),
-                        Text(
-                          'Maximum interval: ${_milliseconds(_stats.maximumInterval).toStringAsFixed(2)} ms',
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _SignalMetricsPanel(metrics: _visibleSignalMetrics),
-                        const SizedBox(height: 12),
-                        _SignalRangeControls(
-                          suggestedRange: _suggestedRange,
-                          lockedRange: _lockedRange,
-                          onLock: _lockSuggestedRange,
-                          onReset: _resetLockedRange,
-                        ),
-                      ],
-                    ),
-                  ),
+                _SignalRangeControls(
+                  suggestedRange: _suggestedRange,
+                  lockedRange: _lockedRange,
+                  onLock: _lockSuggestedRange,
+                  onReset: _resetLockedRange,
                 ),
                 const SizedBox(height: 16),
                 Card(
@@ -282,6 +238,62 @@ class _FrameTimingPageState extends State<FrameTimingPage>
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _CaptureOverview extends StatelessWidget {
+  const _CaptureOverview({
+    required this.preview,
+    required this.frameStats,
+    required this.signalMetrics,
+  });
+
+  final Widget preview;
+  final FrameTimingStats frameStats;
+  final SignalLogMetrics? signalMetrics;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        _FingerPreview(preview: preview),
+        const SizedBox(width: 16),
+        Expanded(
+          child: _SignalMetricsPanel(
+            metrics: signalMetrics,
+            frameStats: frameStats,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FingerPreview extends StatelessWidget {
+  const _FingerPreview({required this.preview});
+
+  final Widget preview;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Semantics(
+      label: 'Place your fingertip over the red camera target',
+      child: Container(
+        width: 112,
+        height: 112,
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: colors.error, width: 3),
+        ),
+        child: ClipOval(
+          child: LivePreviewPanel(preview: preview, size: 104),
+        ),
+      ),
     );
   }
 }
@@ -363,39 +375,80 @@ class SignalLogMetrics {
 }
 
 class _SignalMetricsPanel extends StatelessWidget {
-  const _SignalMetricsPanel({required this.metrics});
+  const _SignalMetricsPanel({required this.metrics, required this.frameStats});
 
   final SignalLogMetrics? metrics;
+  final FrameTimingStats frameStats;
 
   @override
   Widget build(BuildContext context) {
     final metrics = this.metrics;
 
-    if (metrics == null) {
-      return const Text('Signal timestamp: waiting for signal');
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Signal timestamp: ${metrics.formattedTimestamp}'),
-        Text('Raw red: ${metrics.rawRedIntensity.toStringAsFixed(2)}'),
         Text(
-          'Band-pass output: '
-          '${metrics.bandPassedRedIntensity.toStringAsFixed(2)}',
+          'Live statistics',
+          style: Theme.of(context).textTheme.titleSmall,
         ),
-        Text('Capped output: ${metrics.cappedRedIntensity.toStringAsFixed(2)}'),
-        Text('Plotted delta: ${metrics.formattedDifference}'),
-        Text(
-          'Output cap: ${_FrameTimingPageState._signalMinValue.toStringAsFixed(2)} '
-          'to ${_FrameTimingPageState._signalMaxValue.toStringAsFixed(2)}',
+        const SizedBox(height: 6),
+        _MetricRow(
+          label: 'FPS',
+          value: frameStats.averageFps.toStringAsFixed(1),
         ),
-        Text(
-          'Delta cap: '
-          '-${_FrameTimingPageState._signalDifferenceMaxMagnitude.toStringAsFixed(2)} '
-          'to ${_FrameTimingPageState._signalDifferenceMaxMagnitude.toStringAsFixed(2)}',
+        _MetricRow(
+          label: 'Frames',
+          value: frameStats.framesObserved.toString(),
+        ),
+        _MetricRow(
+          label: 'Timestamp',
+          value: metrics?.formattedTimestamp ?? '--:--.---',
+        ),
+        _MetricRow(
+          label: 'Raw red',
+          value: metrics?.rawRedIntensity.toStringAsFixed(2) ?? '--',
+        ),
+        _MetricRow(
+          label: 'Filtered',
+          value: metrics?.bandPassedRedIntensity.toStringAsFixed(2) ?? '--',
+        ),
+        _MetricRow(
+          label: 'Delta',
+          value: metrics?.formattedDifference ?? '--',
         ),
       ],
+    );
+  }
+}
+
+class _MetricRow extends StatelessWidget {
+  const _MetricRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: textTheme.bodySmall)),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.fade,
+              softWrap: false,
+              textAlign: TextAlign.end,
+              style: textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
