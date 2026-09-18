@@ -102,6 +102,19 @@ class SignalAmplitudeRange {
   String get label => '+/-${maxMagnitude.toStringAsFixed(2)}';
 }
 
+class SignalDifferenceRange {
+  const SignalDifferenceRange({required this.minimum, required this.maximum})
+      : assert(maximum >= minimum);
+
+  final double minimum;
+  final double maximum;
+
+  bool contains(double value) => value >= minimum && value <= maximum;
+
+  String get label =>
+      '${minimum.toStringAsFixed(2)} to ${maximum.toStringAsFixed(2)}';
+}
+
 class _AmplitudeSample {
   const _AmplitudeSample({required this.timestamp, required this.value});
 
@@ -147,6 +160,44 @@ class SignalAmplitudeRangeTracker {
 
   void add({required Duration timestamp, required double value}) {
     _samples.addLast(_AmplitudeSample(timestamp: timestamp, value: value));
+
+    final cutoff = timestamp - window;
+    while (_samples.isNotEmpty && _samples.first.timestamp < cutoff) {
+      _samples.removeFirst();
+    }
+  }
+
+  void reset() {
+    _samples.clear();
+  }
+}
+
+/// Tracks the actual minimum and maximum signal difference in a rolling window.
+class SignalDifferenceRangeTracker {
+  SignalDifferenceRangeTracker({this.window = const Duration(seconds: 5)})
+      : assert(window > Duration.zero);
+
+  final Duration window;
+  final ListQueue<_AmplitudeSample> _samples = ListQueue<_AmplitudeSample>();
+
+  SignalDifferenceRange? get currentRange {
+    final values = _samples
+        .map((sample) => sample.value)
+        .where((value) => value.isFinite);
+    if (values.isEmpty) return null;
+
+    var minimum = double.infinity;
+    var maximum = double.negativeInfinity;
+    for (final value in values) {
+      minimum = math.min(minimum, value);
+      maximum = math.max(maximum, value);
+    }
+
+    return SignalDifferenceRange(minimum: minimum, maximum: maximum);
+  }
+
+  void add({required Duration timestamp, required double difference}) {
+    _samples.addLast(_AmplitudeSample(timestamp: timestamp, value: difference));
 
     final cutoff = timestamp - window;
     while (_samples.isNotEmpty && _samples.first.timestamp < cutoff) {

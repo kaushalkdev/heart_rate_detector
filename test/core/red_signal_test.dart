@@ -87,4 +87,31 @@ void main() {
 
     expect(tracker.suggestedRange?.maxMagnitude, 2);
   });
+
+  test('tracks actual minimum and maximum signal differences', () {
+    final tracker = SignalDifferenceRangeTracker();
+
+    tracker.add(timestamp: Duration.zero, difference: -2.5);
+    tracker.add(timestamp: const Duration(seconds: 1), difference: 1.25);
+    tracker.add(timestamp: const Duration(seconds: 2), difference: 4);
+
+    expect(tracker.currentRange?.minimum, -2.5);
+    expect(tracker.currentRange?.maximum, 4);
+    expect(tracker.currentRange?.label, '-2.50 to 4.00');
+    expect(tracker.currentRange?.contains(-2.5), isTrue);
+    expect(tracker.currentRange?.contains(4), isTrue);
+    expect(tracker.currentRange?.contains(4.01), isFalse);
+  });
+
+  test('removes difference samples outside the tracking window', () {
+    final tracker = SignalDifferenceRangeTracker(
+      window: const Duration(seconds: 2),
+    );
+
+    tracker.add(timestamp: Duration.zero, difference: -5);
+    tracker.add(timestamp: const Duration(seconds: 3), difference: 2);
+
+    expect(tracker.currentRange?.minimum, 2);
+    expect(tracker.currentRange?.maximum, 2);
+  });
 }

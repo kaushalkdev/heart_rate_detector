@@ -26,6 +26,9 @@ class _FrameTimingPageState extends State<FrameTimingPage>
   static const _signalMinValue = -20.0;
   static const _signalMaxValue = 20.0;
   static const _signalDifferenceMaxMagnitude = 5.0;
+  static const _graphAmplitudeRange = SignalAmplitudeRange(
+    maxMagnitude: 1.44,
+  );
 
   final FrameTimingTracker _tracker = FrameTimingTracker();
   final RedChannelAnalyzer _redAnalyzer = const RedChannelAnalyzer();
@@ -35,14 +38,14 @@ class _FrameTimingPageState extends State<FrameTimingPage>
   final RedSignalTracker _redSignalTracker = RedSignalTracker(
     differenceLimit: _signalDifferenceMaxMagnitude,
   );
-  final SignalAmplitudeRangeTracker _rangeTracker =
-      SignalAmplitudeRangeTracker();
+  final SignalDifferenceRangeTracker _differenceRangeTracker =
+      SignalDifferenceRangeTracker();
   FrameTimingStats _stats = const FrameTimingStats.empty();
   FrameTimingStats _latestStats = const FrameTimingStats.empty();
   SignalLogMetrics? _latestSignalMetrics;
   SignalLogMetrics? _visibleSignalMetrics;
-  SignalAmplitudeRange? _suggestedRange;
-  SignalAmplitudeRange? _lockedRange;
+  SignalDifferenceRange? _currentDifferenceRange;
+  SignalDifferenceRange? _lockedDifferenceRange;
   List<RedSignalSample> _signalSamples = const [];
   StreamSubscription<CameraFrame>? _subscription;
   Timer? _displayTimer;
@@ -69,8 +72,8 @@ class _FrameTimingPageState extends State<FrameTimingPage>
           setState(() {
             _stats = _latestStats;
             _visibleSignalMetrics = _latestSignalMetrics;
-            _suggestedRange = _rangeTracker.suggestedRange;
-            _signalSamples = _redSignalTracker.samples;
+            _currentDifferenceRange = _differenceRangeTracker.currentRange;
+            _signalSamples = _samplesForGraph();
           });
         }
       });
@@ -107,9 +110,9 @@ class _FrameTimingPageState extends State<FrameTimingPage>
     );
     final plottedDifference = sample?.difference;
     if (plottedDifference != null) {
-      _rangeTracker.add(
+      _differenceRangeTracker.add(
         timestamp: frame.arrivedAt,
-        value: plottedDifference,
+        difference: plottedDifference,
       );
     }
     _latestSignalMetrics = SignalLogMetrics(
@@ -128,9 +131,8 @@ class _FrameTimingPageState extends State<FrameTimingPage>
     await _subscription?.cancel();
     _subscription = null;
     _signalFilter.reset();
-    _rangeTracker.reset();
-    _suggestedRange = null;
-    _lockedRange = null;
+    _differenceRangeTracker.reset();
+    _currentDifferenceRange = null;
     await widget.cameraSession.dispose();
     if (mounted) setState(() => _sessionReady = false);
   }
@@ -167,26 +169,59 @@ class _FrameTimingPageState extends State<FrameTimingPage>
       'band_passed=${metrics.bandPassedRedIntensity.toStringAsFixed(4)} '
       'capped=${metrics.cappedRedIntensity.toStringAsFixed(4)} '
       'difference=${metrics.formattedDifference} '
-      'suggested_range=${_rangeTracker.suggestedRange?.label ?? 'warming_up'} '
-      'locked_range=${_lockedRange?.label ?? 'none'}',
+      'graph_range=${_graphAmplitudeRange.label} '
+      'difference_range=${_differenceRangeTracker.currentRange?.label ?? 'warming_up'} '
+      'locked_difference_range=${_lockedDifferenceRange?.label ?? 'none'} '
+      'difference_accepted=${_isDifferenceAccepted(metrics.plottedDifference)}',
       name: 'heart_rate.signal',
     );
   }
 
-  SignalAmplitudeRange? get _activeRange => _lockedRange ?? _suggestedRange;
+  bool _isDifferenceAccepted(double? difference) {
+    if (difference == null) return false;
+    final lockedRange = _lockedDifferenceRange;
+    if (lockedRange == null) return true;
 
-  void _lockSuggestedRange() {
-    final suggestedRange = _suggestedRange;
-    if (suggestedRange == null) return;
+    return lockedRange.contains(difference);
+  }
+
+  List<RedSignalSample> _samplesForGraph() {
+    final samples = _redSignalTracker.samples;
+    final lockedRange = _lockedDifferenceRange;
+    if (lockedRange == null) return samples;
+
+    var lastAcceptedDifference = 0.0;
+    var hasAcceptedDifference = false;
+    return samples.map((sample) {
+      final accepted = lockedRange.contains(sample.difference);
+      if (accepted) {
+        lastAcceptedDifference = sample.difference;
+        hasAcceptedDifference = true;
+        return sample;
+      }
+
+      return RedSignalSample(
+        timestamp: sample.timestamp,
+        redIntensity: sample.redIntensity,
+        difference: hasAcceptedDifference ? lastAcceptedDifference : 0,
+      );
+    }).toList(growable: false);
+  }
+
+  void _lockDifferenceRange() {
+    final currentRange = _currentDifferenceRange;
+    if (currentRange == null) return;
 
     setState(() {
-      _lockedRange = suggestedRange;
+      _lockedDifferenceRange = currentRange;
+      _signalSamples = _samplesForGraph();
     });
   }
 
-  void _resetLockedRange() {
+  void _resetLockedDifferenceRange() {
     setState(() {
-      _lockedRange = null;
+      _lockedDifferenceRange = null;
+      _signalSamples = _redSignalTracker.samples;
     });
   }
 
@@ -207,11 +242,11 @@ class _FrameTimingPageState extends State<FrameTimingPage>
                   signalMetrics: _visibleSignalMetrics,
                 ),
                 const SizedBox(height: 16),
-                _SignalRangeControls(
-                  suggestedRange: _suggestedRange,
-                  lockedRange: _lockedRange,
-                  onLock: _lockSuggestedRange,
-                  onReset: _resetLockedRange,
+                _DifferenceRangeControls(
+                  currentRange: _currentDifferenceRange,
+                  lockedRange: _lockedDifferenceRange,
+                  onLock: _lockDifferenceRange,
+                  onReset: _resetLockedDifferenceRange,
                 ),
                 const SizedBox(height: 16),
                 Card(
@@ -230,7 +265,7 @@ class _FrameTimingPageState extends State<FrameTimingPage>
                         const SizedBox(height: 8),
                         RedSignalChart(
                           samples: _signalSamples,
-                          amplitudeRange: _activeRange,
+                          amplitudeRange: _graphAmplitudeRange,
                         ),
                       ],
                     ),
@@ -298,42 +333,58 @@ class _FingerPreview extends StatelessWidget {
   }
 }
 
-class _SignalRangeControls extends StatelessWidget {
-  const _SignalRangeControls({
-    required this.suggestedRange,
+class _DifferenceRangeControls extends StatelessWidget {
+  const _DifferenceRangeControls({
+    required this.currentRange,
     required this.lockedRange,
     required this.onLock,
     required this.onReset,
   });
 
-  final SignalAmplitudeRange? suggestedRange;
-  final SignalAmplitudeRange? lockedRange;
+  final SignalDifferenceRange? currentRange;
+  final SignalDifferenceRange? lockedRange;
   final VoidCallback onLock;
   final VoidCallback onReset;
 
   @override
   Widget build(BuildContext context) {
-    final lockedRange = this.lockedRange;
-    final suggestedRange = this.suggestedRange;
-    final hasSuggestion = suggestedRange != null;
-    final label = lockedRange == null
-        ? 'Lock range: ${suggestedRange?.label ?? '--'}'
-        : 'Range locked: ${lockedRange.label}';
+    final currentLabel = currentRange?.label ?? '--';
+    final lockedLabel = lockedRange?.label ?? 'Not locked';
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        FilledButton.icon(
-          onPressed: hasSuggestion ? onLock : null,
-          icon: Icon(lockedRange == null ? Icons.lock_open : Icons.lock),
-          label: Text(label),
+        Text(
+          'Red difference calibration',
+          style: Theme.of(context).textTheme.titleSmall,
         ),
-        OutlinedButton.icon(
-          onPressed: lockedRange == null ? null : onReset,
-          icon: const Icon(Icons.restart_alt),
-          label: const Text('Reset'),
+        const SizedBox(height: 6),
+        _MetricRow(label: 'Current range', value: currentLabel),
+        _MetricRow(label: 'Locked range', value: lockedLabel),
+        _MetricRow(
+          label: 'Graph gate',
+          value: lockedRange == null ? 'Inactive' : 'Active',
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              onPressed: currentRange == null ? null : onLock,
+              icon: const Icon(Icons.lock),
+              label: Text(
+                lockedRange == null
+                    ? 'Lock difference range'
+                    : 'Update locked range',
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: lockedRange == null ? null : onReset,
+              icon: const Icon(Icons.restart_alt),
+              label: const Text('Reset'),
+            ),
+          ],
         ),
       ],
     );
