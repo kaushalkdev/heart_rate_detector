@@ -95,6 +95,11 @@ class _RedSignalPainter extends CustomPainter {
     final path = Path();
     var started = false;
     for (final sample in samples) {
+      if (!sample.isAccepted) {
+        started = false;
+        continue;
+      }
+
       final age = newestMicros - sample.timestamp.inMicroseconds;
       final x = plot.right - (age / windowMicros) * plot.width;
       final normalized = (sample.difference / maxMagnitude).clamp(-1.0, 1.0);

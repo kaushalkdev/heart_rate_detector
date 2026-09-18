@@ -114,4 +114,31 @@ void main() {
     expect(tracker.currentRange?.minimum, 2);
     expect(tracker.currentRange?.maximum, 2);
   });
+
+  test('suggests a percentile range after enough samples', () {
+    final tracker = SignalDifferenceRangeTracker(
+      lowerPercentile: 0.25,
+      upperPercentile: 0.75,
+      minimumSampleCount: 5,
+    );
+
+    for (var value = 0; value < 5; value++) {
+      tracker.add(
+        timestamp: Duration(milliseconds: value * 100),
+        difference: value.toDouble(),
+      );
+    }
+
+    expect(tracker.suggestedRange?.minimum, 1);
+    expect(tracker.suggestedRange?.maximum, 3);
+  });
+
+  test('does not suggest a range before the minimum sample count', () {
+    final tracker = SignalDifferenceRangeTracker(minimumSampleCount: 3);
+
+    tracker.add(timestamp: Duration.zero, difference: -1);
+    tracker.add(timestamp: const Duration(seconds: 1), difference: 1);
+
+    expect(tracker.suggestedRange, isNull);
+  });
 }

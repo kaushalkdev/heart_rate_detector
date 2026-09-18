@@ -8,11 +8,13 @@ class RedSignalSample {
     required this.timestamp,
     required this.redIntensity,
     required this.difference,
+    this.isAccepted = true,
   });
 
   final Duration timestamp;
   final double redIntensity;
   final double difference;
+  final bool isAccepted;
 }
 
 /// Extracts mean red intensity from a sampled YUV420 frame.
@@ -172,18 +174,33 @@ class SignalAmplitudeRangeTracker {
   }
 }
 
-/// Tracks the actual minimum and maximum signal difference in a rolling window.
+/// Tracks observed and percentile-based signal difference ranges.
 class SignalDifferenceRangeTracker {
-  SignalDifferenceRangeTracker({this.window = const Duration(seconds: 5)})
-      : assert(window > Duration.zero);
+  SignalDifferenceRangeTracker({
+    this.window = const Duration(seconds: 5),
+    this.lowerPercentile = 0.05,
+    this.upperPercentile = 0.95,
+    this.minimumSampleCount = 60,
+  })  : assert(window > Duration.zero),
+        assert(lowerPercentile >= 0 && lowerPercentile < upperPercentile),
+        assert(upperPercentile <= 1),
+        assert(minimumSampleCount > 0);
 
   final Duration window;
+  final double lowerPercentile;
+  final double upperPercentile;
+  final int minimumSampleCount;
   final ListQueue<_AmplitudeSample> _samples = ListQueue<_AmplitudeSample>();
 
+  List<double> get _values => _samples
+      .map((sample) => sample.value)
+      .where((value) => value.isFinite)
+      .toList();
+
+  int get sampleCount => _values.length;
+
   SignalDifferenceRange? get currentRange {
-    final values = _samples
-        .map((sample) => sample.value)
-        .where((value) => value.isFinite);
+    final values = _values;
     if (values.isEmpty) return null;
 
     var minimum = double.infinity;
@@ -194,6 +211,27 @@ class SignalDifferenceRangeTracker {
     }
 
     return SignalDifferenceRange(minimum: minimum, maximum: maximum);
+  }
+
+  SignalDifferenceRange? get suggestedRange {
+    final values = _values..sort();
+    if (values.length < minimumSampleCount) return null;
+
+    return SignalDifferenceRange(
+      minimum: _percentile(values, lowerPercentile),
+      maximum: _percentile(values, upperPercentile),
+    );
+  }
+
+  double _percentile(List<double> sortedValues, double percentile) {
+    final position = (sortedValues.length - 1) * percentile;
+    final lowerIndex = position.floor();
+    final upperIndex = position.ceil();
+    if (lowerIndex == upperIndex) return sortedValues[lowerIndex];
+
+    final fraction = position - lowerIndex;
+    return sortedValues[lowerIndex] * (1 - fraction) +
+        sortedValues[upperIndex] * fraction;
   }
 
   void add({required Duration timestamp, required double difference}) {
