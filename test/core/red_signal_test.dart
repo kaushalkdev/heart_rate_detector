@@ -24,15 +24,4 @@ void main() {
 
     expect(const RedChannelAnalyzer(pixelStep: 1).averageRed(frame), 100);
   });
-
-  test('tracks signed differences and removes samples outside the window', () {
-    final tracker = RedSignalTracker(window: const Duration(seconds: 2));
-
-    tracker.add(timestamp: Duration.zero, redIntensity: 100);
-    tracker.add(timestamp: const Duration(seconds: 1), redIntensity: 103);
-    tracker.add(timestamp: const Duration(seconds: 2), redIntensity: 101);
-    tracker.add(timestamp: const Duration(seconds: 4), redIntensity: 106);
-
-    expect(tracker.samples.map((sample) => sample.difference), [-2, 5]);
-  });
 }

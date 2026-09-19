@@ -2,16 +2,12 @@ import 'dart:collection';
 
 import 'package:hear_rate_detector/features/heart_rate/ports/camera_frame.dart';
 
+/// A filtered red-intensity value at a camera frame timestamp.
 class RedSignalSample {
-  const RedSignalSample({
-    required this.timestamp,
-    required this.redIntensity,
-    required this.difference,
-  });
+  const RedSignalSample({required this.timestamp, required this.redIntensity});
 
   final Duration timestamp;
   final double redIntensity;
-  final double difference;
 }
 
 /// Extracts mean red intensity from a sampled YUV420 frame.
@@ -44,32 +40,43 @@ class RedChannelAnalyzer {
   }
 }
 
-/// Builds a timestamped rolling series of consecutive red-frame differences.
+/// Retains filtered intensity samples without calculating frame differences.
 class RedSignalTracker {
-  RedSignalTracker({this.window = const Duration(seconds: 15)});
+  RedSignalTracker({this.window = const Duration(seconds: 15)})
+    : assert(window > Duration.zero);
 
   final Duration window;
   final ListQueue<RedSignalSample> _samples = ListQueue<RedSignalSample>();
-  double? _previousRed;
 
   List<RedSignalSample> get samples => List.unmodifiable(_samples);
 
   void add({required Duration timestamp, required double redIntensity}) {
-    final previous = _previousRed;
-    _previousRed = redIntensity;
-    if (previous == null) return;
-
-    _samples.addLast(
-      RedSignalSample(
-        timestamp: timestamp,
-        redIntensity: redIntensity,
-        difference: redIntensity - previous,
-      ),
+    final sample = RedSignalSample(
+      timestamp: timestamp,
+      redIntensity: redIntensity,
     );
+    _samples.addLast(sample);
 
     final cutoff = timestamp - window;
     while (_samples.isNotEmpty && _samples.first.timestamp < cutoff) {
       _samples.removeFirst();
     }
   }
+
+  void reset() {
+    _samples.clear();
+  }
+}
+
+class SignalAmplitudeRange {
+  const SignalAmplitudeRange({required this.maxMagnitude})
+    : assert(maxMagnitude > 0);
+
+  final double maxMagnitude;
+
+  double get min => -maxMagnitude;
+
+  double get max => maxMagnitude;
+
+  String get label => '+/-${maxMagnitude.toStringAsFixed(2)}';
 }
