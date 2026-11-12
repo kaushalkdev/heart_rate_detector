@@ -155,6 +155,7 @@ class _HeartRateDetectorPageState extends State<HeartRateDetectorPage>
     }
 
     if (!_sessionReady) {
+      
       return Scaffold(
         appBar: AppBar(title: const Text('Heart Rate Detector')),
         body: const Center(child: CircularProgressIndicator()),

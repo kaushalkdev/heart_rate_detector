@@ -10,13 +10,19 @@ import 'package:hear_rate_detector/features/heart_rate/ports/camera_session.dart
 import 'package:hear_rate_detector/features/heart_rate/processing/rgb_analyzer.dart';
 import 'package:hear_rate_detector/features/heart_rate/processing/signal_filter.dart';
 import 'package:hear_rate_detector/features/heart_rate/ui/widgets/live_preview_panel.dart';
-import 'package:hear_rate_detector/features/heart_rate/ui/widgets/red_signal_chart.dart';
+import 'package:hear_rate_detector/features/heart_rate/ui/widgets/red_signal_explorer.dart';
+import 'package:hear_rate_detector/features/heart_rate/ui/red_signal_presenter.dart';
 
 /// Diagnostic screen that measures the camera's natural frame delivery rate.
 class FrameTimingPage extends StatefulWidget {
-  const FrameTimingPage({super.key, required this.cameraSession});
+  const FrameTimingPage({
+    super.key,
+    required this.cameraSession,
+    this.presenter,
+  });
 
   final CameraSession cameraSession;
+  final RedSignalPresenter? presenter;
 
   @override
   State<FrameTimingPage> createState() => _FrameTimingPageState();
@@ -35,6 +41,11 @@ class _FrameTimingPageState extends State<FrameTimingPage>
     sampleRateHz: _signalSampleRateHz,
   );
   final RedSignalTracker _redSignalTracker = RedSignalTracker();
+  late final RedSignalPresenter _presenter =
+      widget.presenter ?? RedSignalPresenter();
+  int _sourceRevision = 0;
+  int _snapshotRevision = 0;
+  int _resetRevision = 0;
   FrameTimingStats _stats = const FrameTimingStats.empty();
   FrameTimingStats _latestStats = const FrameTimingStats.empty();
   SignalLogMetrics? _latestSignalMetrics;
@@ -67,6 +78,7 @@ class _FrameTimingPageState extends State<FrameTimingPage>
             _stats = _latestStats;
             _visibleSignalMetrics = _latestSignalMetrics;
             _signalSamples = _redSignalTracker.samples;
+            _snapshotRevision = _sourceRevision;
           });
         }
       });
@@ -110,6 +122,7 @@ class _FrameTimingPageState extends State<FrameTimingPage>
           timestamp: frame.arrivedAt,
           redIntensity: bandPassedRedIntensity,
         );
+        _sourceRevision++;
       }
     } else {
       _resetSignalCapture();
@@ -162,6 +175,9 @@ class _FrameTimingPageState extends State<FrameTimingPage>
     _redSignalTracker.reset();
     _captureStartedAt = null;
     _signalSamples = const [];
+    _snapshotRevision = ++_sourceRevision;
+    _resetRevision++;
+    _presenter.clear();
   }
 
   void _logSignalMetrics(SignalLogMetrics metrics) {
@@ -232,8 +248,14 @@ class _FrameTimingPageState extends State<FrameTimingPage>
                           ),
                         ),
                         const SizedBox(height: 8),
-                        RedSignalChart(
+                        RedSignalExplorer(
                           samples: _signalSamples,
+                          revision: _snapshotRevision,
+                          resetRevision: _resetRevision,
+                          presenter: _presenter,
+                          emptyMessage: _captureStatus == 'Below threshold'
+                              ? 'Cover the camera with your fingertip. Red must stay at or above 200 for 5 seconds before plotting.'
+                              : '$_captureStatus. The graph starts after 5 seconds of stable capture.',
                           amplitudeRange: _graphAmplitudeRange,
                         ),
                       ],

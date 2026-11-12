@@ -2,6 +2,7 @@ import 'package:hear_rate_detector/features/heart_rate/infrastructure/camera_plu
 import 'package:hear_rate_detector/features/heart_rate/processing/isolate_frame_processor.dart';
 import 'package:hear_rate_detector/features/heart_rate/ui/heart_rate_detector_page.dart';
 import 'package:hear_rate_detector/features/heart_rate/ui/frame_timing_page.dart';
+import 'package:hear_rate_detector/features/heart_rate/ui/red_signal_presenter.dart';
 
 /// Default production wiring: plugin camera + isolate-based frame processing.
 /// All heavy processing (YUV conversion, RGB analysis, filtering, encoding)
@@ -14,5 +15,8 @@ HeartRateDetectorPage createDefaultHeartRateDetectorPage() {
 }
 
 FrameTimingPage createDefaultFrameTimingPage() {
-  return FrameTimingPage(cameraSession: CameraPluginSession());
+  return FrameTimingPage(
+    cameraSession: CameraPluginSession(),
+    presenter: RedSignalPresenter(),
+  );
 }
